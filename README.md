@@ -87,22 +87,7 @@ gradio-client==2.5.0
 - [gyan.dev](https://www.gyan.dev/ffmpeg/builds/) – 提供完整版（默认 GPL 许可证）
 - [BtbN](https://github.com/BtbN/FFmpeg-Builds/releases) – 同时提供 **GPL** 和 **LGPL** 版本
 
-> **LGPL 版本选择**：若您需要遵守 **LGPL 许可证**，请从 [BtbN 发布页](https://github.com/BtbN/FFmpeg-Builds/releases) 下载文件名中包含 **`-lgpl`** 的版本（例如 `ffmpeg-master-latest-win64-lgpl.zip`）。  
 > 下载后解压，将 `bin` 文件夹内的 `ffmpeg.exe` 和 `ffprobe.exe` 复制到与主程序（`video_toolbox.py` 或 `VideoToolbox.exe`）相同的目录下，或添加到系统 PATH 环境变量。
-
-####  FFmpeg 许可证说明（LGPL）
-
-FFmpeg 是一个开源项目，核心库采用 **GNU Lesser General Public License (LGPL) 2.1** 或更高版本。LGPL 允许您在闭源项目中动态链接 FFmpeg 库而无需公开您的源代码。  
-如果您使用的是 **LGPL 版本** 的 FFmpeg 构建，请遵守以下要求：
-
-- 您必须明确声明您的程序使用了 FFmpeg，并提供 FFmpeg 的许可证副本。
-- 任何对 FFmpeg 本身的修改必须开源。
-- 若以静态链接方式使用，可能需要提供相关目标文件以供用户重新链接。
-
-完整的 LGPL 2.1 许可证文本请参阅：[GNU LGPL 2.1 官方文档](https://www.gnu.org/licenses/lgpl-2.1.html)  
-FFmpeg 项目主页：[https://ffmpeg.org](https://ffmpeg.org)
-
-> 注：部分 FFmpeg 构建（如 gyan.dev 的“完整版”或 BtbN 的 `-gpl` 版本）包含 GPL 许可的组件（例如 x264），此时整个构建需遵循 **GPL** 协议。请根据您的使用场景选择合适的版本。
 
 ---
 
@@ -110,3 +95,69 @@ FFmpeg 项目主页：[https://ffmpeg.org](https://ffmpeg.org)
 
 本项目使用 [MIT License](LICENSE)。  
 **FFmpeg 是其各自所有者的项目，遵循 LGPL/GPL 许可证，与本项目独立。**
+
+---
+
+## 使用的开源项目
+
+本项目便携版压缩包中内置了FFmpeg，在此展示所用版本及源码和许可证链接
+
+FFmpeg (LGPL variant, autobuild-2026-06-11-14-22)
+- 许可证：LGPLv3
+- 源代码：https://github.com/FFmpeg/FFmpeg/archive/d30dead35e7fecae51ccd4602273153c87b1bbd9.zip
+- 许可证原文：https://github.com/FFmpeg/FFmpeg/blob/master/COPYING.LGPLv3
+
+项目所使用的Python库
+| 名称              | 版本号     | 许可证                              |
+|-------------------|-------------|--------------------------------------|
+| Jinja2            | 3.1.6       | BSD License                          |
+| MarkupSafe        | 3.0.3       | BSD-3-Clause                         |
+| PyYAML            | 6.0.3       | MIT License                          |
+| Pygments          | 2.20.0      | BSD-2-Clause                         |
+| annotated-doc     | 0.0.4       | MIT                                  |
+| annotated-types   | 0.7.0       | MIT License                          |
+| anyio             | 4.13.0      | MIT                                  |
+| brotli            | 1.2.0       | MIT                                  |
+| certifi           | 2026.5.20   | Mozilla Public License 2.0 (MPL 2.0) |
+| click             | 8.4.1       | BSD-3-Clause                         |
+| colorama          | 0.4.6       | BSD License                          |
+| exceptiongroup    | 1.3.1       | MIT License                          |
+| fastapi           | 0.136.3     | MIT                                  |
+| filelock          | 3.29.3      | MIT                                  |
+| fsspec            | 2026.4.0    | BSD-3-Clause                         |
+| gradio            | 6.17.3      | Apache-2.0                           |
+| gradio_client     | 2.5.0       | Apache-2.0                           |
+| groovy            | 0.1.2       | MIT License                          |
+| h11               | 0.16.0      | MIT License                          |
+| hf-gradio         | 0.4.1       | MIT                                  |
+| hf-xet            | 1.5.1       | Apache-2.0                           |
+| httpcore          | 1.0.9       | BSD-3-Clause                         |
+| httpx             | 0.28.1      | BSD License                          |
+| huggingface_hub   | 1.19.0      | Apache Software License              |
+| idna              | 3.18        | BSD-3-Clause                         |
+| markdown-it-py    | 4.2.0       | MIT License                          |
+| mdurl             | 0.1.2       | MIT License                          |
+| numpy             | 2.2.6       | BSD License                          |
+| orjson            | 3.11.9      | MPL-2.0 AND (Apache-2.0 OR MIT)      |
+| packaging         | 26.2        | Apache-2.0 OR BSD-2-Clause           |
+| pandas            | 2.3.3       | BSD License                          |
+| pillow            | 12.2.0      | MIT-CMU                              |
+| pydantic          | 2.13.4      | MIT                                  |
+| pydantic_core     | 2.46.4      | MIT                                  |
+| pydub             | 0.25.1      | MIT License                          |
+| python-dateutil   | 2.9.0.post0 | Apache Software License; BSD License |
+| python-multipart  | 0.0.32      | Apache-2.0                           |
+| pytz              | 2026.2      | MIT License                          |
+| rich              | 15.0.0      | MIT License                          |
+| safehttpx         | 0.1.7       | MIT License                          |
+| semantic-version  | 2.10.0      | BSD License                          |
+| shellingham       | 1.5.4       | ISC License (ISCL)                   |
+| six               | 1.17.0      | MIT License                          |
+| starlette         | 1.3.0       | BSD-3-Clause                         |
+| tomlkit           | 0.14.0      | MIT License                          |
+| tqdm              | 4.68.2      | MPL-2.0 AND MIT                      |
+| typer             | 0.25.1      | MIT                                  |
+| typing-inspection | 0.4.2       | MIT                                  |
+| typing_extensions | 4.15.0      | PSF-2.0                              |
+| tzdata            | 2026.2      | Apache-2.0                           |
+| uvicorn           | 0.49.0      | BSD-3-Clause                         |
