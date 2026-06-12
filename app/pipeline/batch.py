@@ -1,0 +1,252 @@
+import os
+from app.core.filesystem import find_all_video_subtitle_pairs, find_all_videos
+from app.core.ffmpeg import get_video_info
+from app.commands.profiles import EncoderProfile, auto_select_encoder, get_profile
+from app.commands.bitdepth import resolve_pixel_format, is_10bit_pix_fmt, effective_chroma
+from app.pipeline.job import run_job
+
+
+class LogBuffer:
+    """Accumulate log lines so Gradio Textbox shows the full history."""
+    def __init__(self):
+        self._lines = []
+
+    def emit(self, msg: str) -> str:
+        self._lines.append(str(msg))
+        return "\n".join(self._lines)
+
+    def emit_many(self, msgs: list[str]) -> str:
+        for m in msgs:
+            self._lines.append(str(m))
+        return "\n".join(self._lines)
+
+
+def run_batch_from_directory(
+    input_dir: str,
+    output_dir: str,
+    force_cpu: bool = False,
+    with_subtitles: bool = False,
+    crf_value: int = 23,
+    audio_codec: str = 'aac',
+    audio_bitrate: str = '128k',
+    out_format: str = 'mp4',
+    output_suffix: str = '',
+):
+    """Generator that yields accumulated log text. Used by the four Gradio Tab processors."""
+    log = LogBuffer()
+    input_dir = os.path.abspath(input_dir)
+    output_dir = os.path.abspath(output_dir)
+
+    if not os.path.exists(input_dir):
+        yield log.emit("错误：输入目录不存在")
+        return
+
+    yield log.emit(f"输入目录: {input_dir}")
+    yield log.emit(f"输出目录: {output_dir}")
+    yield log.emit("正在扫描...")
+
+    if with_subtitles:
+        items = find_all_video_subtitle_pairs(input_dir)
+        if not items:
+            yield log.emit("未找到匹配的视频和字幕文件对。")
+            return
+        yield log.emit(f"找到 {len(items)} 个视频-字幕对。")
+    else:
+        raw_videos = find_all_videos(input_dir)
+        items = [(v, None, d) for v, d in raw_videos]
+        if not items:
+            yield log.emit("未找到任何视频文件。")
+            return
+        yield log.emit(f"找到 {len(items)} 个视频文件。")
+
+    suffix = output_suffix or ('_hardsub' if with_subtitles else '')
+    success_count = 0
+
+    for idx, (video_path, sub_path, rel_dir) in enumerate(items, 1):
+        basename = os.path.basename(video_path)
+        yield log.emit(f"\n[{idx}/{len(items)}] 处理: {basename}")
+
+        out_subdir = os.path.join(output_dir, rel_dir)
+        os.makedirs(out_subdir, exist_ok=True)
+
+        name_without_ext = os.path.splitext(basename)[0]
+        output_path = os.path.join(out_subdir, f"{name_without_ext}{suffix}.{out_format}")
+
+        if os.path.exists(output_path):
+            yield log.emit(f"  跳过: {output_path}")
+            success_count += 1
+            continue
+
+        encoder, out_pix_fmt, profile, custom_vf, msg = auto_select_encoder(video_path, force_cpu)
+        yield log.emit(f"  {msg}")
+        yield log.emit(f"  编码器: {encoder.name}  pix_fmt: {out_pix_fmt}  profile: {profile}")
+
+        ok, logs = run_job(
+            video_path, output_path, encoder,
+            quality=crf_value,
+            audio_codec=audio_codec,
+            audio_bitrate=audio_bitrate,
+            sub_path=sub_path,
+            extra_vf=custom_vf,
+            output_pix_fmt=out_pix_fmt,
+            profile=profile,
+        )
+        yield log.emit_many(logs)
+        if ok:
+            success_count += 1
+
+    yield log.emit(f"\n完成！成功: {success_count}/{len(items)}")
+
+
+def run_batch_from_files(
+    files: list,
+    output_dir: str,
+    encoder: EncoderProfile | None,
+    mode: str,           # 'transcode' | 'subtitle'
+    crf_value: int = 23,
+    audio_codec: str = 'aac',
+    audio_bitrate: str = '128k',
+    out_format: str = 'mp4',
+):
+    """Generator for uploaded file processing. Yields accumulated log text.
+    If encoder is None, auto-select per file based on input depth/chroma.
+    """
+    log = LogBuffer()
+    if not files:
+        yield log.emit("未选择任何文件。")
+        return
+
+    output_dir = os.path.abspath(output_dir)
+    os.makedirs(output_dir, exist_ok=True)
+    total = len(files)
+    success_count = 0
+
+    for idx, file_obj in enumerate(files, 1):
+        temp_path = file_obj.name
+        orig_name = file_obj.orig_name if hasattr(file_obj, 'orig_name') else os.path.basename(temp_path)
+        video_basename = os.path.splitext(orig_name)[0]
+        yield log.emit(f"\n[{idx}/{total}] 处理: {orig_name}")
+
+        sub_path = None
+        if mode == "subtitle":
+            base_dir = os.path.dirname(temp_path) if hasattr(file_obj, 'orig_name') else os.path.dirname(temp_path)
+            for ext in ['.ass', '.srt']:
+                candidate = os.path.join(base_dir, video_basename + ext)
+                if os.path.exists(candidate):
+                    sub_path = candidate
+                    yield log.emit(f"  找到字幕: {os.path.basename(candidate)}")
+                    break
+            if not sub_path:
+                yield log.emit(f"  未找到同名字幕，跳过字幕烧录，仅转码")
+
+        suffix = "_hardsub" if (mode == "subtitle" and sub_path) else ""
+        output_filename = f"{video_basename}{suffix}.{out_format}"
+        output_path = os.path.join(output_dir, output_filename)
+
+        if os.path.exists(output_path):
+            yield log.emit(f"  跳过: {output_path}")
+            success_count += 1
+            continue
+
+        if encoder is None:
+            enc, out_fmt, profile, custom_vf, msg = auto_select_encoder(temp_path)
+            yield log.emit(f"  {msg}")
+            yield log.emit(f"  编码器: {enc.name}  pix_fmt: {out_fmt}  profile: {profile}")
+        else:
+            enc, out_fmt, profile, custom_vf = encoder, None, None, None
+
+        ok, logs = run_job(
+            temp_path, output_path, enc,
+            quality=crf_value,
+            audio_codec=audio_codec,
+            audio_bitrate=audio_bitrate,
+            sub_path=sub_path,
+            extra_vf=custom_vf,
+            output_pix_fmt=out_fmt,
+            profile=profile,
+        )
+        yield log.emit_many(logs)
+        if ok:
+            success_count += 1
+
+    yield log.emit(f"\n完成！成功: {success_count}/{total}")
+
+
+def run_general_convert(
+    files: list,
+    output_dir: str,
+    out_format: str,
+    encoder: EncoderProfile,
+    target_depth: str,       # 'auto' | '8bit' | '10bit'
+    chroma: str,             # 'auto' | '420' | '422' | '444'
+    quality: int,
+    audio_codec: str,
+    audio_bitrate: str,
+    extra_args: str | None = None,
+):
+    """Generator for the general video conversion tab. Yields accumulated log text."""
+    log = LogBuffer()
+    if not files:
+        yield log.emit("未选择任何文件。")
+        return
+
+    output_dir = os.path.abspath(output_dir)
+    os.makedirs(output_dir, exist_ok=True)
+    total = len(files)
+    success_count = 0
+
+    for idx, f in enumerate(files, 1):
+        temp_path = f.name
+        orig_name = f.orig_name if hasattr(f, 'orig_name') else os.path.basename(temp_path)
+        basename = os.path.splitext(orig_name)[0]
+        out_path = os.path.join(output_dir, f"{basename}.{out_format}")
+
+        if os.path.exists(out_path):
+            yield log.emit(f"[{idx}/{total}] 跳过（已存在）: {out_path}")
+            success_count += 1
+            continue
+
+        yield log.emit(f"[{idx}/{total}] 转换: {orig_name} -> {out_path}")
+        yield log.emit(f"  编码器: {encoder.name}, 质量: {quality}, 位深: {target_depth}, 色度: {chroma}")
+
+        input_codec, input_pix_fmt = get_video_info(temp_path)
+        input_is_10bit = is_10bit_pix_fmt(input_pix_fmt or '')
+        yield log.emit(f"  输入: codec={input_codec}, pix_fmt={input_pix_fmt}, 10bit={'是' if input_is_10bit else '否'}")
+
+        out_pix_fmt, custom_vf, profile = resolve_pixel_format(input_pix_fmt, target_depth, chroma, encoder)
+
+        # Non-420 chroma with NVENC: disable hwaccel decode because the CUDA
+        # pipeline forces NV12 (4:2:0) intermediate.  CPU decode + NVENC encode.
+        if encoder.is_nvenc and effective_chroma(chroma, input_pix_fmt) != '420':
+            yield log.emit(f"  ℹ 非420色度：停用hwaccel cuda解码，仅用NVENC编码")
+            encoder = EncoderProfile(
+                name=encoder.name, label=encoder.label,
+                use_gpu=False, hwaccel=None,
+                default_pix_fmt=encoder.default_pix_fmt,
+                supports_10bit=encoder.supports_10bit,
+                pix_fmt_10bit=encoder.pix_fmt_10bit,
+                quality_param=encoder.quality_param,
+                rate_control=encoder.rate_control,
+                _profile_map=encoder._profile_map,
+            )
+            out_pix_fmt, custom_vf, profile = resolve_pixel_format(input_pix_fmt, target_depth, chroma, encoder)
+
+        yield log.emit(f"  编码器: {encoder.name}  pix_fmt: {out_pix_fmt}  profile: {profile}")
+        if custom_vf:
+            yield log.emit(f"  vf_filter: {custom_vf}")
+
+        ok, logs = run_job(
+            temp_path, out_path, encoder,
+            quality=quality,
+            audio_codec=audio_codec,
+            audio_bitrate=audio_bitrate,
+            extra_vf=custom_vf,
+            output_pix_fmt=out_pix_fmt,
+            profile=profile,
+            extra_args=extra_args,
+        )
+        yield log.emit_many(logs)
+        if ok:
+            success_count += 1
+
+    yield log.emit(f"\n完成！成功: {success_count}/{total}")
